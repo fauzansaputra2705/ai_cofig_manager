@@ -1,0 +1,24 @@
+<svg width="120" height="40" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Icon container -->
+  <rect x="2" y="2" width="36" height="36" rx="8" fill="url(#grad1)"/>
+
+  <!-- Perfectly centered config brackets { } -->
+  <g stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.95">
+    <!-- Left bracket { - shifted right and down to center -->
+    <path d="M 17.5 13 C 15.5 13 14.5 14 14.5 16 L 14.5 17.5 C 14.5 18.5 13.5 19.5 12.5 20 C 13.5 20.5 14.5 21.5 14.5 22.5 L 14.5 24 C 14.5 26 15.5 27 17.5 27"/>
+
+    <!-- Right bracket } - shifted right and down to center -->
+    <path d="M 22.5 13 C 24.5 13 25.5 14 25.5 16 L 25.5 17.5 C 25.5 18.5 26.5 19.5 27.5 20 C 26.5 20.5 25.5 21.5 25.5 22.5 L 25.5 24 C 25.5 26 24.5 27 22.5 27"/>
+  </g>
+
+  <!-- Text -->
+  <text x="45" y="20" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#1e293b">AI Config</text>
+  <text x="45" y="32" font-family="system-ui, -apple-system, sans-serif" font-size="10" font-weight="500" fill="#64748b">Manager</text>
+</svg>

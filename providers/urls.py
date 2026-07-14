@@ -60,4 +60,15 @@ urlpatterns = [
     path("p/<str:key>/mcp/save/", views.mcp_save, name="provider_mcp_save"),
     # Pi multi-file save
     path("p/<str:key>/pi-save/", views.pi_save_file, name="pi_save_file"),
+    # Pi per-file validate/diff
+    path(
+        "p/<str:key>/pi/<str:file_type>/validate/",
+        views.pi_validate,
+        name="pi_validate",
+    ),
+    path(
+        "p/<str:key>/pi/<str:file_type>/diff/",
+        views.pi_diff,
+        name="pi_diff",
+    ),
 ]

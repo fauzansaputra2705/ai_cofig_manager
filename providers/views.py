@@ -59,11 +59,13 @@ def index(request):
 
 
 def _read_pi_files(base_path):
-    """Read Pi's 3 config files: settings.json, models.json, mcp.json"""
+    """Read Pi's 3 config files: settings.json, models.json, mcp.json.
+    Returns dict of {key: raw_text}. All are JSON.
+    """
     pi_files = {}
     for fname in ["settings.json", "models.json", "mcp.json"]:
         fpath = base_path.parent / fname
-        key = fname.replace('.json', '')  # Remove .json extension
+        key = fname.replace('.json', '')
         if fpath.exists():
             try:
                 pi_files[key] = fpath.read_text(encoding="utf-8")
@@ -72,6 +74,21 @@ def _read_pi_files(base_path):
         else:
             pi_files[key] = ""
     return pi_files
+
+
+def _read_pi_file_text(provider, file_type: str) -> str:
+    """Read a single Pi sub-file's current text from disk."""
+    if provider is None or provider.key != "pi":
+        return ""
+    if file_type not in ("settings", "models", "mcp"):
+        return ""
+    fpath = provider.path.parent / f"{file_type}.json"
+    if not fpath.exists():
+        return ""
+    try:
+        return fpath.read_text(encoding="utf-8")
+    except Exception:
+        return ""
 
 
 def detail(request, key: str):
@@ -126,9 +143,13 @@ def detail(request, key: str):
 
     # Pi multi-file support
     pi_files = {}
+    pi_masked = {}
     pi_models_json = "[]"
+    pi_backups = {}
     if key == "pi":
         pi_files = _read_pi_files(provider.path)
+        for fkey, ftext in pi_files.items():
+            pi_masked[fkey] = mask_text(ftext, provider.format) if ftext else ""
         # Parse models.json for structured UI
         if pi_files.get("models"):
             try:
@@ -136,6 +157,12 @@ def detail(request, key: str):
                 pi_models_json = json.dumps(models_data, ensure_ascii=False)
             except Exception:
                 pi_models_json = "{}"
+        # Get backup lists for each Pi file
+        from .services import list_backups_for_path
+        for fname in ["settings.json", "models.json", "mcp.json"]:
+            fpath = provider.path.parent / fname
+            key_name = fname.replace('.json', '')
+            pi_backups[key_name] = list_backups_for_path(fpath)
 
     return render(
         request,
@@ -152,7 +179,9 @@ def detail(request, key: str):
             "oauth_status": oauth_status,
             "has_mcp": has_mcp,
             "pi_files": pi_files,
+            "pi_masked": pi_masked,
             "pi_models_json": pi_models_json,
+            "pi_backups": pi_backups,
         },
     )
 
@@ -1062,6 +1091,7 @@ def pi_save_file(request, key: str):
         return JsonResponse({"ok": False, "message": f"Invalid JSON: {str(e)}"})
 
     # Create backup
+    backup_name = None
     if file_path.exists():
         from datetime import datetime
         backup_name = f"{filename}.bak.{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -1069,11 +1099,49 @@ def pi_save_file(request, key: str):
         try:
             backup_path.write_text(file_path.read_text(encoding="utf-8"), encoding="utf-8")
         except Exception:
-            pass
+            backup_name = None
 
     # Write file
     try:
         file_path.write_text(content, encoding="utf-8")
-        return JsonResponse({"ok": True, "message": f"{filename} saved successfully"})
+        return JsonResponse({
+            "ok": True,
+            "message": f"{filename} saved successfully",
+            "backup": backup_name
+        })
     except Exception as e:
         return JsonResponse({"ok": False, "message": f"Failed to write file: {str(e)}"})
+
+
+@require_POST
+def pi_validate(request, key: str, file_type: str):
+    """Validate JSON for a specific Pi sub-file (settings/models/mcp)."""
+    provider = get_provider(key)
+    if provider is None or provider.key != "pi":
+        raise Http404
+    if file_type not in ("settings", "models", "mcp"):
+        return JsonResponse({"ok": False, "message": f"Unknown file: {file_type}", "format": "json"})
+    text = request.POST.get("content", "")
+    ok, msg = validate_text(text, "json")
+    return JsonResponse({"ok": ok, "message": msg, "format": "json"})
+
+
+@require_POST
+def pi_diff(request, key: str, file_type: str):
+    """Return unified diff between proposed content and on-disk Pi sub-file."""
+    provider = get_provider(key)
+    if provider is None or provider.key != "pi":
+        raise Http404
+    if file_type not in ("settings", "models", "mcp"):
+        return JsonResponse({"ok": False, "diff": "", "unchanged": True, "format": "json"})
+    new_text = request.POST.get("content", "")
+    old_text = _read_pi_file_text(provider, file_type)
+    diff = _build_diff(old_text, new_text, f"{file_type}.json")
+    return JsonResponse(
+        {
+            "ok": True,
+            "diff": diff,
+            "unchanged": old_text == new_text,
+            "format": "json",
+        }
+    )

@@ -4,6 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}AI Config Manager{% endblock %}</title>
+  {% load static %}
+  <link rel="icon" type="image/svg+xml" href="{% static 'images/favicon.svg' %}" />
+  <link rel="icon" type="image/png" sizes="32x32" href="{% static 'images/favicon.svg' %}" />
+  <link rel="apple-touch-icon" sizes="180x180" href="{% static 'images/favicon.svg' %}" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
@@ -14,12 +18,8 @@
 <body class="bg-slate-50 text-slate-800 min-h-screen">
   <header class="bg-white border-b border-slate-200">
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <a href="{% url 'provider_index' %}" class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold">AI</div>
-        <div>
-          <div class="font-semibold text-slate-900">AI Config Manager</div>
-          <div class="text-xs text-slate-500">Manage settings.json across AI providers</div>
-        </div>
+      <a href="{% url 'provider_index' %}" class="flex items-center gap-3 group">
+        <img src="{% static 'images/logo.svg' %}" alt="AI Config Manager" class="h-10 transition-transform group-hover:scale-105" />
       </a>
       <nav class="flex items-center gap-4 text-sm">
         <a href="{% url 'provider_index' %}" class="{% if request.resolver_match.url_name == 'provider_index' or request.resolver_match.url_name == 'provider_detail' %}text-indigo-600{% else %}text-slate-600 hover:text-slate-900{% endif %}">Providers</a>

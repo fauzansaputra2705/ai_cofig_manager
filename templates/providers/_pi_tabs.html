@@ -1,5 +1,10 @@
 {# Pi Coding Agent multi-file tabs (Settings, Models, MCP) #}
-<div x-data="piEditor()" class="space-y-6">
+<div x-data="piEditor()" class="space-y-6" @pi-alert.window="showAlert($event.detail.message, $event.detail.type)">
+
+  {# Alert message container #}
+  <div x-show="alertMessage" x-transition class="px-4 py-2 rounded-md text-sm"
+       :class="alertType === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'"
+       x-html="alertMessage"></div>
 
   {# Pi-specific tabs #}
   <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm w-fit">
@@ -25,223 +30,412 @@
   </div>
 
   {# Settings.json editor #}
-  <div x-show="currentTab === 'settings'" class="rounded-lg border border-slate-200 bg-white shadow-sm">
-    <form @submit.prevent="saveFile('settings')" class="flex flex-col">
-      {% csrf_token %}
+  <div x-show="currentTab === 'settings'" class="space-y-6">
+    {% include "providers/_pi_raw_editor.html" with file_type="settings" raw_text=pi_files.settings masked_preview=pi_masked.settings %}
+
+    {# Backups for settings.json #}
+    <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div>
-          <h2 class="text-sm font-semibold text-slate-800">settings.json</h2>
-          <p class="text-xs text-slate-500">Pi coding agent main settings (theme, packages, model defaults)</p>
+        <h2 class="text-sm font-semibold text-slate-800">Backups</h2>
+        <span class="text-xs text-slate-500">Created automatically before each write. Restore creates a new backup of the current file first.</span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {% for b in pi_backups.settings %}
+        <div class="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+          <code class="grow truncate font-mono text-slate-700">{{ b.path.name }}</code>
+          <span class="text-xs text-slate-500">{{ b.display_time }}</span>
+          <span class="text-xs text-slate-400">{{ b.size }} B</span>
+          <form method="post" action="{% url 'backup_restore' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Restore from {{ b.path.name|escapejs }}? Current file will be backed up.')"
+                    class="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+              Restore
+            </button>
+          </form>
+          <form method="post" action="{% url 'backup_delete' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Delete backup {{ b.path.name|escapejs }}?')"
+                    class="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50">
+              Delete
+            </button>
+          </form>
         </div>
-        <button type="submit" :disabled="saving"
-                class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
-          <span x-show="!saving">Save</span>
-          <span x-show="saving">Saving...</span>
-        </button>
+        {% empty %}
+        <div class="px-4 py-6 text-center text-sm text-slate-500">No backups yet.</div>
+        {% endfor %}
       </div>
-      <div class="p-4">
-        <textarea x-model="content.settings" class="w-full h-96 font-mono text-xs border border-slate-200 rounded p-2"></textarea>
-      </div>
-    </form>
+    </div>
   </div>
 
   {# Models.json editor with structured UI #}
-  <div x-show="currentTab === 'models'" class="rounded-lg border border-slate-200 bg-white shadow-sm">
-    <div x-data='piModelsEditor({ initial: {{ pi_models_json|safe }} })'>
-      <form @submit.prevent="saveModels()" class="flex flex-col">
-        {% csrf_token %}
-        <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <div>
-            <h2 class="text-sm font-semibold text-slate-800">Model Providers</h2>
-            <p class="text-xs text-slate-500">Manage model providers with dynamic UI</p>
-          </div>
-          <button type="submit" :disabled="saving"
-                  class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
-            <span x-show="!saving">Save</span>
-            <span x-show="saving">Saving...</span>
-          </button>
-        </div>
-        <div class="p-4">
-          <div class="mb-3">
-            <button type="button" @click="addProvider()"
-                    class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">+ Add provider</button>
-          </div>
-          <input type="hidden" name="pi_models_json" :value="JSON.stringify({providers: itemsToProviders()})" />
-          <div class="space-y-3">
-            <template x-for="(p, idx) in items" :key="idx">
-              <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <div class="grid grid-cols-12 items-center gap-2">
-                  <input x-model="p.id" placeholder="provider id (e.g. 9router-aws)"
-                         class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                  <select x-model="p.api" class="col-span-2 rounded-md border-slate-300 bg-white px-2 py-1 text-sm">
-                    <option value="openai-completions">openai-completions</option>
-                    <option value="anthropic">anthropic</option>
-                    <option value="openai">openai</option>
-                  </select>
-                  <input x-model="p.baseUrl" placeholder="base URL"
-                         class="col-span-6 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                  <button type="button" @click="items.splice(idx,1)"
-                          class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
-                </div>
-                <div class="mt-2 grid grid-cols-1 gap-2">
-                  <div class="relative" x-data="{ show: false }">
-                    <input :type="show ? 'text' : 'password'" x-model="p.apiKey"
-                           placeholder="API Key" autocomplete="off"
-                           class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
-                    <button type="button" @click="show = !show"
-                            class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
-                            x-text="show ? 'Hide' : 'Show'"></button>
-                  </div>
-                </div>
-                <div class="mt-3">
-                  <div class="mb-1 flex items-center justify-between">
-                    <span class="text-xs font-medium text-slate-600">Models</span>
-                    <button type="button" @click="addModel(p)"
-                            class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add model</button>
-                  </div>
-                  <div class="space-y-3">
-                    <template x-for="(m, mi) in p.models" :key="mi">
-                      <div class="rounded-md border border-slate-300 bg-white p-3">
-                        <div class="grid grid-cols-12 items-center gap-2 mb-2">
-                          <input x-model="m.id" placeholder="model id (e.g. kr/claude-haiku-4.5)"
-                                 class="col-span-5 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          <input x-model="m.name" placeholder="display name"
-                                 class="col-span-6 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm" />
-                          <button type="button" @click="p.models.splice(mi,1)"
-                                  class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2 mb-2">
-                          <label class="flex items-center gap-1 text-xs">
-                            <input type="checkbox" x-model="m.reasoning" class="rounded border-slate-300" />
-                            <span>Extended Thinking</span>
-                          </label>
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Context Window</label>
-                            <input type="number" x-model="m.contextWindow" placeholder="200000"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Max Tokens</label>
-                            <input type="number" x-model="m.maxTokens" placeholder="64000"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                        </div>
-                        <div class="mb-2">
-                          <label class="block text-xs text-slate-600 mb-1">Input Types</label>
-                          <div class="flex gap-3">
+  <div x-show="currentTab === 'models'" class="space-y-6">
+      <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div x-data='piModelsEditor({ initial: {{ pi_models_json|safe }} })'>
+        <form @submit.prevent="saveModels()" class="flex flex-col">
+            {% csrf_token %}
+            <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-800">Model Providers</h2>
+                <p class="text-xs text-slate-500">Manage model providers with dynamic UI</p>
+            </div>
+            <button type="submit" :disabled="saving"
+                    class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+                <span x-show="!saving">Save</span>
+                <span x-show="saving">Saving...</span>
+            </button>
+            </div>
+            <div class="p-4">
+            <div class="mb-3">
+                <button type="button" @click="addProvider()"
+                        class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">+ Add provider</button>
+            </div>
+            <input type="hidden" name="pi_models_json" :value="JSON.stringify({providers: itemsToProviders()})" />
+            <div class="space-y-3">
+                <template x-for="(p, idx) in items" :key="idx">
+                <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div class="grid grid-cols-12 items-center gap-2">
+                    <input x-model="p.id" placeholder="provider id (e.g. 9router-aws)"
+                            class="mt-1 col-span-3 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                    <select x-model="p.api" class="mt-1 col-span-2 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm">
+                        <option value="openai-completions">openai-completions</option>
+                        <option value="anthropic">anthropic</option>
+                        <option value="openai">openai</option>
+                    </select>
+                    <input x-model="p.baseUrl" placeholder="base URL"
+                            class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                    <button type="button" @click="items.splice(idx,1)"
+                            class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                    </div>
+                    <div class="mt-2 grid grid-cols-1 gap-2">
+                    <div class="relative" x-data="{ show: false }">
+                        <input :type="show ? 'text' : 'password'" x-model="p.apiKey"
+                            placeholder="API Key" autocomplete="off"
+                            class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 pr-12 text-sm font-mono shadow-sm" />
+                        <button type="button" @click="show = !show"
+                                class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                                x-text="show ? 'Hide' : 'Show'"></button>
+                    </div>
+                    </div>
+                    <div class="mt-3">
+                    <div class="mb-1 flex items-center justify-between">
+                        <span class="text-xs font-medium text-slate-600">Models</span>
+                        <button type="button" @click="addModel(p)"
+                                class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add model</button>
+                    </div>
+                    <div class="space-y-3">
+                        <template x-for="(m, mi) in p.models" :key="mi">
+                        <div class="rounded-md border border-slate-300 bg-white p-3">
+                            <div class="grid grid-cols-12 items-center gap-2 mb-2">
+                            <input x-model="m.id" placeholder="model id (e.g. kr/claude-haiku-4.5)"
+                                    class="mt-1 col-span-5 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            <input x-model="m.name" placeholder="display name"
+                                    class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm" />
+                            <button type="button" @click="p.models.splice(mi,1)"
+                                    class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 mb-2">
                             <label class="flex items-center gap-1 text-xs">
-                              <input type="checkbox" :checked="m.input.includes('text')"
-                                     @change="toggleInput(m, 'text', $event.target.checked)"
-                                     class="rounded border-slate-300" />
-                              <span>Text</span>
+                                <input type="checkbox" x-model="m.reasoning" class="rounded border-slate-300" />
+                                <span>Extended Thinking</span>
                             </label>
-                            <label class="flex items-center gap-1 text-xs">
-                              <input type="checkbox" :checked="m.input.includes('image')"
-                                     @change="toggleInput(m, 'image', $event.target.checked)"
-                                     class="rounded border-slate-300" />
-                              <span>Image</span>
-                            </label>
-                          </div>
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Context Window</label>
+                                <input type="number" x-model="m.contextWindow" placeholder="200000"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Max Tokens</label>
+                                <input type="number" x-model="m.maxTokens" placeholder="64000"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            </div>
+                            <div class="mb-2">
+                            <label class="block text-xs text-slate-600 mb-1">Input Types</label>
+                            <div class="flex gap-3">
+                                <label class="flex items-center gap-1 text-xs">
+                                <input type="checkbox" :checked="m.input.includes('text')"
+                                        @change="toggleInput(m, 'text', $event.target.checked)"
+                                        class="rounded border-slate-300" />
+                                <span>Text</span>
+                                </label>
+                                <label class="flex items-center gap-1 text-xs">
+                                <input type="checkbox" :checked="m.input.includes('image')"
+                                        @change="toggleInput(m, 'image', $event.target.checked)"
+                                        class="rounded border-slate-300" />
+                                <span>Image</span>
+                                </label>
+                            </div>
+                            </div>
+                            <div class="grid grid-cols-4 gap-2">
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Input ($/1M)</label>
+                                <input type="number" step="0.01" x-model="m.cost.input" placeholder="1.0"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Output ($/1M)</label>
+                                <input type="number" step="0.01" x-model="m.cost.output" placeholder="5.0"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Cache Read ($/1M)</label>
+                                <input type="number" step="0.01" x-model="m.cost.cacheRead" placeholder="0.1"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-600 mb-0.5">Cache Write ($/1M)</label>
+                                <input type="number" step="0.01" x-model="m.cost.cacheWrite" placeholder="1.25"
+                                    class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                            </div>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-4 gap-2">
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Input ($/1M)</label>
-                            <input type="number" step="0.01" x-model="m.cost.input" placeholder="1.0"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Output ($/1M)</label>
-                            <input type="number" step="0.01" x-model="m.cost.output" placeholder="5.0"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Cache Read ($/1M)</label>
-                            <input type="number" step="0.01" x-model="m.cost.cacheRead" placeholder="0.1"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                          <div>
-                            <label class="block text-xs text-slate-600 mb-0.5">Cache Write ($/1M)</label>
-                            <input type="number" step="0.01" x-model="m.cost.cacheWrite" placeholder="1.25"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                          </div>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
+                        </template>
+                    </div>
+                    </div>
                 </div>
-              </div>
-            </template>
-          </div>
+                </template>
+            </div>
+            </div>
+        </form>
         </div>
-      </form>
+      </div>
+
+    {# Backups for models.json #}
+    <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <h2 class="text-sm font-semibold text-slate-800">Backups</h2>
+        <span class="text-xs text-slate-500">Created automatically before each write. Restore creates a new backup of the current file first.</span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {% for b in pi_backups.models %}
+        <div class="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+          <code class="grow truncate font-mono text-slate-700">{{ b.path.name }}</code>
+          <span class="text-xs text-slate-500">{{ b.display_time }}</span>
+          <span class="text-xs text-slate-400">{{ b.size }} B</span>
+          <form method="post" action="{% url 'backup_restore' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Restore from {{ b.path.name|escapejs }}? Current file will be backed up.')"
+                    class="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+              Restore
+            </button>
+          </form>
+          <form method="post" action="{% url 'backup_delete' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Delete backup {{ b.path.name|escapejs }}?')"
+                    class="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50">
+              Delete
+            </button>
+          </form>
+        </div>
+        {% empty %}
+        <div class="px-4 py-6 text-center text-sm text-slate-500">No backups yet.</div>
+        {% endfor %}
+      </div>
     </div>
   </div>
 
   {# MCP.json editor #}
-  <div x-show="currentTab === 'mcp'" class="rounded-lg border border-slate-200 bg-white shadow-sm">
-    <form @submit.prevent="saveFile('mcp')" class="flex flex-col">
-      {% csrf_token %}
+  <div x-show="currentTab === 'mcp'" class="space-y-6">
+    {% include "providers/_pi_raw_editor.html" with file_type="mcp" raw_text=pi_files.mcp masked_preview=pi_masked.mcp %}
+
+    {# Backups for mcp.json #}
+    <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <div>
-          <h2 class="text-sm font-semibold text-slate-800">mcp.json</h2>
-          <p class="text-xs text-slate-500">MCP servers configuration (command, args, env)</p>
+        <h2 class="text-sm font-semibold text-slate-800">Backups</h2>
+        <span class="text-xs text-slate-500">Created automatically before each write. Restore creates a new backup of the current file first.</span>
+      </div>
+      <div class="divide-y divide-slate-100">
+        {% for b in pi_backups.mcp %}
+        <div class="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+          <code class="grow truncate font-mono text-slate-700">{{ b.path.name }}</code>
+          <span class="text-xs text-slate-500">{{ b.display_time }}</span>
+          <span class="text-xs text-slate-400">{{ b.size }} B</span>
+          <form method="post" action="{% url 'backup_restore' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Restore from {{ b.path.name|escapejs }}? Current file will be backed up.')"
+                    class="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+              Restore
+            </button>
+          </form>
+          <form method="post" action="{% url 'backup_delete' provider.key b.path.name %}">
+            {% csrf_token %}
+            <button onclick="return confirm('Delete backup {{ b.path.name|escapejs }}?')"
+                    class="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50">
+              Delete
+            </button>
+          </form>
         </div>
-        <button type="submit" :disabled="saving"
-                class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
-          <span x-show="!saving">Save</span>
-          <span x-show="saving">Saving...</span>
-        </button>
+        {% empty %}
+        <div class="px-4 py-6 text-center text-sm text-slate-500">No backups yet.</div>
+        {% endfor %}
       </div>
-      <div class="p-4">
-        <textarea x-model="content.mcp" class="w-full h-96 font-mono text-xs border border-slate-200 rounded p-2"></textarea>
-      </div>
-    </form>
+    </div>
   </div>
 
 </div>
 
 <script>
 function piEditor() {
-  const settingsContent = document.getElementById('pi-settings-content').textContent;
-  const modelsContent = document.getElementById('pi-models-content').textContent;
-  const mcpContent = document.getElementById('pi-mcp-content').textContent;
-
   return {
     currentTab: 'settings',
-    saving: false,
-    content: {
-      settings: settingsContent,
-      models: modelsContent,
-      mcp: mcpContent
-    },
+    alertMessage: '',
+    alertType: 'success',
     switchTab(tab) {
       this.currentTab = tab;
     },
-    async saveFile(fileType) {
+    showAlert(message, type = 'success') {
+      this.alertMessage = message;
+      this.alertType = type;
+      setTimeout(() => {
+        this.alertMessage = '';
+      }, 5000);
+    },
+  };
+}
+
+function piRawEditor(opts) {
+  return {
+    status: 'idle',
+    statusMessage: '',
+    masked: false,
+    diffOpen: false,
+    diffHtml: '',
+    diffStatus: '',
+    saving: false,
+    _fileType: opts.fileType,
+    _validateUrl: opts.validateUrl,
+    _diffUrl: opts.diffUrl,
+    _saveUrl: opts.saveUrl,
+    _csrf: opts.csrfToken,
+    _raw: '',
+    _masked: '',
+    init() {
+      this._raw = this.$refs.rawSource.value;
+      this._masked = this.$refs.maskedSource.value;
+      this.$refs.area.value = this._raw;
+      this.validateNow();
+    },
+    toggleMasked() {
+      if (this.masked) {
+        this._raw = this.$refs.area.value;
+        this.$refs.area.value = this._masked || this._raw;
+      } else {
+        this.$refs.area.value = this._raw;
+      }
+      this.validateNow();
+    },
+    async validateNow() {
+      if (this.masked) return;
+      const text = this.$refs.area.value;
+      if (!text.trim()) {
+        this.status = 'idle';
+        this.statusMessage = '';
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append('content', text);
+        const res = await fetch(this._validateUrl, {
+          method: 'POST',
+          body: fd,
+          headers: { 'X-CSRFToken': this._csrf }
+        });
+        const data = await res.json();
+        if (data.ok) {
+          this.status = 'ok';
+          this.statusMessage = (data.format || 'json').toUpperCase() + ' valid';
+        } else {
+          this.status = 'error';
+          this.statusMessage = data.message;
+        }
+      } catch (err) {
+        this.status = 'error';
+        this.statusMessage = 'validation request failed';
+      }
+    },
+    format() {
+      if (this.masked) {
+        this.status = 'error';
+        this.statusMessage = 'Untick "Mask secrets" to edit/format';
+        return;
+      }
+      try {
+        const parsed = JSON.parse(this.$refs.area.value || '{}');
+        this.$refs.area.value = JSON.stringify(parsed, null, 2);
+        this._raw = this.$refs.area.value;
+        this.validateNow();
+      } catch (e) {
+        this.status = 'error';
+        this.statusMessage = 'Invalid JSON: ' + e.message;
+      }
+    },
+    async previewDiff() {
+      try {
+        const fd = new FormData();
+        fd.append('content', this.$refs.area.value);
+        const res = await fetch(this._diffUrl, {
+          method: 'POST',
+          body: fd,
+          headers: { 'X-CSRFToken': this._csrf }
+        });
+        const data = await res.json();
+        this.diffHtml = this._renderDiff(data.diff || '');
+        this.diffStatus = data.unchanged ? 'No changes vs disk.' : 'Showing proposed vs on-disk.';
+        this.diffOpen = true;
+      } catch (err) {
+        this.diffStatus = 'Diff request failed';
+        this.diffHtml = '';
+        this.diffOpen = true;
+      }
+    },
+    _renderDiff(diff) {
+      if (!diff) return '<span class="text-slate-400">No differences.</span>';
+      const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return diff.split('\n').map((line) => {
+        const e = escape(line);
+        if (line.startsWith('+')) return '<span class="text-emerald-300">' + e + '</span>';
+        if (line.startsWith('-')) return '<span class="text-rose-300">' + e + '</span>';
+        return '<span class="text-slate-300">' + e + '</span>';
+      }).join('\n');
+    },
+    async submit() {
       this.saving = true;
       try {
-        const formData = new FormData();
-        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
-        formData.append('file_type', fileType);
-        formData.append('content', this.content[fileType]);
-
-        const response = await fetch('{% url "pi_save_file" provider.key %}', {
-          method: 'POST',
-          body: formData
-        });
-
-        const data = await response.json();
-        if (data.ok) {
-          alert('File saved successfully!');
-        } else {
-          alert('Error: ' + data.message);
+        if (this.masked) {
+          // Restore raw before submit
+          this.$refs.area.value = this._raw;
         }
-      } catch (error) {
-        alert('Error saving file: ' + error.message);
+        const fd = new FormData();
+        fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+        fd.append('file_type', this._fileType);
+        fd.append('content', this.$refs.area.value);
+        const res = await fetch(this._saveUrl, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.ok) {
+          this.status = 'ok';
+          this.statusMessage = data.message;
+          // Dispatch alert event to parent
+          const backupMsg = data.backup
+            ? `Saved ${this._fileType}.json. Backup at ${data.backup}`
+            : data.message;
+          window.dispatchEvent(new CustomEvent('pi-alert', {
+            detail: { message: backupMsg, type: 'success' }
+          }));
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          this.status = 'error';
+          this.statusMessage = data.message;
+          window.dispatchEvent(new CustomEvent('pi-alert', {
+            detail: { message: data.message, type: 'error' }
+          }));
+        }
+      } catch (err) {
+        this.status = 'error';
+        this.statusMessage = 'save request failed';
       } finally {
         this.saving = false;
       }
-    }
+    },
   };
 }
 
@@ -356,13 +550,23 @@ function piModelsEditor(opts) {
 
         const data = await response.json();
         if (data.ok) {
-          alert('Models saved successfully!');
-          location.reload();
+          // Dispatch alert event to parent
+          const backupMsg = data.backup
+            ? `Saved models.json. Backup at ${data.backup}`
+            : 'Models saved successfully!';
+          window.dispatchEvent(new CustomEvent('pi-alert', {
+            detail: { message: backupMsg, type: 'success' }
+          }));
+          setTimeout(() => location.reload(), 1000);
         } else {
-          alert('Error: ' + data.message);
+          window.dispatchEvent(new CustomEvent('pi-alert', {
+            detail: { message: 'Error: ' + data.message, type: 'error' }
+          }));
         }
       } catch (error) {
-        alert('Error saving models: ' + error.message);
+        window.dispatchEvent(new CustomEvent('pi-alert', {
+          detail: { message: 'Error saving models: ' + error.message, type: 'error' }
+        }));
       } finally {
         this.saving = false;
       }
@@ -371,7 +575,4 @@ function piModelsEditor(opts) {
 }
 </script>
 
-{# Hidden content holders - use textarea to preserve raw text #}
-<textarea id="pi-settings-content" style="display:none;">{{ pi_files.settings|safe }}</textarea>
-<textarea id="pi-models-content" style="display:none;">{{ pi_files.models|safe }}</textarea>
-<textarea id="pi-mcp-content" style="display:none;">{{ pi_files.mcp|safe }}</textarea>
+{# Hidden content holders removed - raw_text comes from server-rendered x-refs in editor partial #}

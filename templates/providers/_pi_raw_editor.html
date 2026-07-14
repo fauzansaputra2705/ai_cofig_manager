@@ -1,0 +1,77 @@
+<div x-data="piRawEditor({
+      fileType: '{{ file_type }}',
+      validateUrl: '{% url 'pi_validate' provider.key file_type %}',
+      diffUrl: '{% url 'pi_diff' provider.key file_type %}',
+      saveUrl: '{% url 'pi_save_file' provider.key %}',
+      csrfToken: '{{ csrf_token }}',
+    })" x-init="init()" class="rounded-lg border border-slate-200 bg-white shadow-sm">
+
+  <textarea x-ref="rawSource" class="hidden">{{ raw_text }}</textarea>
+  <textarea x-ref="maskedSource" class="hidden">{{ masked_preview }}</textarea>
+
+  <form method="post" :action="_saveUrl" @submit.prevent="submit()" class="flex flex-col">
+    <input type="hidden" name="csrfmiddlewaretoken" :value="_csrf">
+
+    <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
+      <button type="submit" :disabled="saving"
+              class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+        <span x-show="!saving">Save</span>
+        <span x-show="saving">Saving…</span>
+      </button>
+
+      <label class="ml-2 flex items-center gap-1.5 text-sm text-slate-700">
+        <input type="checkbox" name="create_backup" checked class="rounded border-slate-300">
+        Backup before save
+      </label>
+
+      <button type="button" @click="validateNow()" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+        Validate
+      </button>
+
+      <span class="text-xs"
+            :class="status === 'ok' ? 'text-emerald-600' : status === 'error' ? 'text-rose-600' : 'text-slate-500'"
+            x-text="statusMessage">JSON valid</span>
+
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" x-model="masked" @change="toggleMasked()" class="rounded border-slate-300">
+          Mask secrets
+        </label>
+
+        <button type="button" @click="format()" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50" title="Pretty-print (JSON only)">
+          Format
+        </button>
+
+        <button type="button" @click="previewDiff()" class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50" title="Preview diff vs disk">
+          Diff
+        </button>
+      </div>
+    </div>
+
+    <textarea x-ref="area" name="content" spellcheck="false" :readonly="masked"
+              @input.debounce.400ms="validateNow()"
+              class="block min-h-[55vh] w-full resize-y border-0 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-100 focus:outline-none focus:ring-0"
+              :class="masked ? 'opacity-90' : ''"></textarea>
+
+    <div class="flex items-center justify-between border-t border-slate-200 px-4 py-2 text-xs text-slate-500">
+      <span x-show="masked" class="text-amber-600" style="display:none;">Masked view is read-only. Untick to edit.</span>
+      <span x-show="!masked">Editing raw JSON for {{ file_type }}.json.</span>
+      <span class="font-mono" x-text="`${$refs.area ? $refs.area.value.length : 0} chars`">0 chars</span>
+    </div>
+  </form>
+
+  <!-- Diff modal -->
+  <div x-show="diffOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @keydown.escape.window="diffOpen=false" style="display:none;">
+    <div class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div>
+          <h3 class="text-sm font-semibold">Diff preview — {{ file_type }}.json</h3>
+          <p class="text-xs text-slate-500" x-text="diffStatus"></p>
+        </div>
+        <button type="button" @click="diffOpen=false" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">Close</button>
+      </div>
+      <pre class="flex-1 overflow-auto bg-slate-950 p-4 font-mono text-xs text-slate-100" x-html="diffHtml"></pre>
+    </div>
+  </div>
+</div>

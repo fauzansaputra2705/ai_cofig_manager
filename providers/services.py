@@ -154,12 +154,12 @@ def backup_file(path: Path) -> Path | None:
     return backup
 
 
-def list_backups(provider: Provider) -> list[BackupEntry]:
-    """Return all backup files for a provider, newest first."""
-    parent = provider.path.parent
+def list_backups_for_path(file_path: Path) -> list[BackupEntry]:
+    """Return all backup files for a given file path, newest first."""
+    parent = file_path.parent
     if not parent.exists():
         return []
-    base = provider.path.name
+    base = file_path.name
     out: list[BackupEntry] = []
     for child in parent.iterdir():
         if not child.is_file():
@@ -178,6 +178,11 @@ def list_backups(provider: Provider) -> list[BackupEntry]:
         )
     out.sort(key=lambda b: b.timestamp, reverse=True)
     return out
+
+
+def list_backups(provider: Provider) -> list[BackupEntry]:
+    """Return all backup files for a provider, newest first."""
+    return list_backups_for_path(provider.path)
 
 
 def find_backup(provider: Provider, filename: str) -> Path | None:
