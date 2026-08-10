@@ -67,7 +67,7 @@ PROVIDERS: list[Provider] = [
     Provider(
         key="claude",
         name="Claude Code",
-        path=HOME / ".claude.json",
+        path=HOME / ".claude" / "settings.json",
         format="json",
         description="Anthropic Claude Code CLI settings (env, permissions, hooks, model).",
     ),
