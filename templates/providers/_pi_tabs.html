@@ -2,31 +2,28 @@
 <div x-data="piEditor()" class="space-y-6" @pi-alert.window="showAlert($event.detail.message, $event.detail.type)">
 
   {# Alert message container #}
-  <div x-show="alertMessage" x-transition class="px-4 py-2 rounded-md text-sm"
-       :class="alertType === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'"
+  <div x-show="alertMessage" x-cloak x-transition
+       class="fixed right-6 top-6 z-50 max-w-sm rounded-md border px-4 py-3 text-sm shadow-sm"
+       :class="alertType === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : alertType === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-rose-200 bg-rose-50 text-rose-700'"
        x-html="alertMessage"></div>
 
   {# Pi-specific tabs #}
   <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm w-fit">
-    <button type="button" @click="switchTab('settings')"
-            :class="currentTab === 'settings' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
-            class="rounded-md px-3 py-1.5 text-sm font-medium transition">
-      Settings
-    </button>
     <button type="button" @click="switchTab('models')"
             :class="currentTab === 'models' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
             class="rounded-md px-3 py-1.5 text-sm font-medium transition">
       Models
+    </button>
+    <button type="button" @click="switchTab('settings')"
+            :class="currentTab === 'settings' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
+            class="rounded-md px-3 py-1.5 text-sm font-medium transition">
+      Settings
     </button>
     <button type="button" @click="switchTab('mcp')"
             :class="currentTab === 'mcp' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
             class="rounded-md px-3 py-1.5 text-sm font-medium transition">
       MCP
     </button>
-    <a href="{% url 'provider_sessions' provider.key %}"
-       class="rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 transition">
-      Sessions
-    </a>
   </div>
 
   {# Settings.json editor #}
@@ -98,12 +95,11 @@
                             class="mt-1 col-span-3 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                     <select x-model="p.api" class="mt-1 col-span-2 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm">
                         <option value="openai-completions">openai-completions</option>
-                        <option value="anthropic">anthropic</option>
-                        <option value="openai">openai</option>
+                        <option value="anthropic-messages">anthropic-messages</option>
                     </select>
                     <input x-model="p.baseUrl" placeholder="base URL"
                             class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
-                    <button type="button" @click="items.splice(idx,1)"
+                    <button type="button" @click="removeProvider(idx)"
                             class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
                     </div>
                     <div class="mt-2 grid grid-cols-1 gap-2">
@@ -130,7 +126,7 @@
                                     class="mt-1 col-span-5 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                             <input x-model="m.name" placeholder="display name"
                                     class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm" />
-                            <button type="button" @click="p.models.splice(mi,1)"
+                            <button type="button" @click="removeModel(p, mi)"
                                     class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
                             </div>
                             <div class="grid grid-cols-3 gap-2 mb-2">
@@ -277,7 +273,7 @@
 <script>
 function piEditor() {
   return {
-    currentTab: 'settings',
+    currentTab: 'models',
     alertMessage: '',
     alertType: 'success',
     switchTab(tab) {
@@ -482,6 +478,12 @@ function piModelsEditor(opts) {
         baseUrl: '',
         models: []
       });
+      this.notify('Provider added. Save to persist changes.', 'success');
+    },
+    removeProvider(index) {
+      if (!confirm('Delete provider? This removes provider and all nested models from current draft.')) return;
+      this.items.splice(index, 1);
+      this.notify('Provider removed from draft.', 'warning');
     },
     addModel(provider) {
       provider.models.push({
@@ -498,6 +500,17 @@ function piModelsEditor(opts) {
           cacheWrite: 0
         }
       });
+      this.notify('Model added. Save to persist changes.', 'success');
+    },
+    removeModel(provider, index) {
+      if (!confirm('Delete model? This removes model from current draft.')) return;
+      provider.models.splice(index, 1);
+      this.notify('Model removed from draft.', 'warning');
+    },
+    notify(message, type = 'success') {
+      window.dispatchEvent(new CustomEvent('pi-alert', {
+        detail: { message, type }
+      }));
     },
     toggleInput(model, type, checked) {
       if (checked) {
